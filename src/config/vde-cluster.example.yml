@@ -1,0 +1,134 @@
+# ==============================================================================
+# VDE-INSTALL: SINGLE SOURCE OF TRUTH (1 file YAML duy nhat, Pigsty CMDB style)
+# Standalone = cum Patroni+etcd 1-node. HA = cung khung, mo rong 3+ nodes.
+# Chay tool ngay tren node local: true; chi cac node khac moi dung SSH.
+# Scale-out DCS can runbook/kiem thu quorum rieng, khong chi apply --force.
+# ==============================================================================
+cluster:
+  name: "dbe-core-prod"
+  profile: "ha"                          # 'standalone' (1 node) | 'ha' ( >=3 nodes)
+  version: "16"
+  package_source: "vnpt"                 # 'vnpt' | 'internal' (repo noi bo VNPT) | 'percona'
+  safeguard: true                        # khong bao gio xoa PGDATA hien co neu khong chi dinh
+  # package_bridge: false              # true: node local lam cau HTTP cho dnf/curl cua node khong co internet
+  # package_bridge_port: 8888
+  # repo_url / gpg_key_url dung cho repo VNPT / internal
+  release_rpm_url: "http://dbengine-repo.ttpmhcm.com/vnpt-db-engine-release.rpm"
+  repo_url: "http://dbengine-repo.ttpmhcm.com/vnpt-db-engine/el$releasever/$basearch"
+  gpg_key_url: "http://dbengine-repo.ttpmhcm.com/RPM-GPG-KEYS/RPM-GPG-KEY-VNPT-DB-ENGINE"
+
+topology:
+  hosts:
+    - ip: "10.10.20.11"
+      name: "dbe-node-01"
+      local: true                       # node dang chay install-tool, khong SSH vao chinh no
+      roles: ["db", "etcd", "balancer"]
+      # parameters: {}                   # override GUC rieng cho host nay (uu tien cao nhat)
+    - ip: "10.10.20.12"
+      name: "dbe-node-02"
+      roles: ["db", "etcd", "balancer"]
+    - ip: "10.10.20.13"
+      name: "dbe-node-03"
+      roles: ["db", "etcd", "balancer"]
+
+ssh:                                    # chi dung de ket noi cac node remote
+  user: "root"
+  port: 22
+  use_sudo: false                        # --sudo cung ap dung cho node local neu khong chay root
+  # key_file: "~/.ssh/id_ed25519"
+
+settings:
+  auto_tune: true
+  workload: "oltp"                       # oltp | olap | crit | tiny (4 template Pigsty)
+
+  storage:
+    data_dir: "/data/postgres/16/data"
+    wal_dir: "/data/postgres/16/wal"
+    backup_dir: "/data/backup"
+
+  auth:
+    postgres_password: "postgres_password"        # doi truoc khi chay production!
+    replicator_password: "replicator_password"
+    monitor_password: "monitor_password"          # user monitor (pg_monitor) cho PMM
+
+  # --- User explicit overrides: LUON ghi de Smart Defaults -------------------
+  parameters:
+    shared_buffers: "8GB"
+    work_mem: "64MB"
+    max_connections: 400
+    checkpoint_timeout: "15min"
+    effective_io_concurrency: 200
+
+  sysctl:
+    vm.swappiness: 10
+
+  ports:
+    postgresql: 5432
+
+  # --- pg_hba rules (thu tu co y nghia, day vao Patroni DCS) -----------------
+  # hba_rules:
+  #   - "host all all 10.10.0.0/16 scram-sha-256"
+
+  # --- DB objects khai bao (Pigsty pg_users / pg_databases style) ------------
+  users:
+    - name: "app_user"
+      password: "app_password"
+      conn_limit: 100
+      pgbouncer: true                    # tu dong dong bo SCRAM hash -> userlist.txt
+  databases:
+    - name: "appdb"
+      owner: "app_user"
+      extensions: ["pg_stat_statements", "pg_trgm"]
+  extensions: ["pg_stat_statements"]
+
+  # --- Thanh phan (cung 1 khung cho ca standalone va ha) ---------------------
+  etcd:
+    enabled: true
+    token: "vde-etcd-cluster"
+  patroni:
+    enabled: true
+    synchronous_mode: true               # standalone tu dong tat (1 node)
+    synchronous_mode_strict: false
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+  pgbouncer:
+    enabled: true
+    pool_mode: "transaction"
+    max_client_conn: 1000
+    default_pool_size: 50
+    max_prepared_statements: 200
+  haproxy:
+    enabled: true
+  # Dedicated client address. Leave disabled until virtual_ip is a free address
+  # on the balancer network. The first balancer is preferred (priority 150) and
+  # takes the address back when its HAProxy write port is open again.
+  # keepalived:
+  #   enabled: true
+  #   virtual_ip: "10.10.20.20/24"      # or "10.10.20.20" to use the node prefix
+  #   auth_pass: "vdeVip01"             # 1-8 letters or digits, same on every balancer
+  #   virtual_router_id: 51             # unique on this L2 segment
+  #   # interface: "eth0"               # default: the device that owns the node IP
+  #   # priorities: {dbe-node-01: 150, dbe-node-02: 140, dbe-node-03: 130}
+  pgbackrest:
+    enabled: true
+    stanza: "vde_cluster"
+    destination: "local"                 # local | s3. HA that fails over should use s3.
+    retention_full: 2
+    retention_diff: 7
+    # s3_endpoint: "https://minio.ttpmhcm.com"
+    # s3_bucket: "vde-backup"
+    # s3_key: ""
+    # s3_key_secret: ""
+    # s3_region: "us-east-1"             # MinIO accepts us-east-1
+    # s3_uri_style: "path"               # path for MinIO, host for AWS
+    # s3_verify_tls: true
+  pmm:
+    enabled: false
+    mode: "external"                    # HA dung PMM Server rieng
+    version: 3
+    server: "https://10.10.30.50:443"
+    user: "service_token"
+    password_env: "PMM_SERVER_TOKEN"     # export tren may chay installer
+    insecure_tls: false
+    query_source: "pgstatements"

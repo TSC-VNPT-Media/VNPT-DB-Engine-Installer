@@ -1,0 +1,2 @@
+# Runtime dependency for YAML inventory parsing (import yaml).
+PyYAML==6.0.3

@@ -1,0 +1,56 @@
+# Python bytecode, virtual environments, and packaging output
+__pycache__/
+*.py[cod]
+.venv/
+.venv.*/
+venv/
+env/
+.Python
+build/
+dist/
+*.egg-info/
+
+# Local test, lint, and coverage output
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local configuration and secrets; keep sanitized examples in Git
+.env
+.env.*
+!.env.example
+/.local/
+/.ssh/
+/cluster*.yml
+/cluster*.yaml
+/vde-cluster.yml
+/vde-cluster.yaml
+/src/config/*.yml
+/src/config/*.yaml
+!/src/config/*.example.yml
+!/src/config/*.example.yaml
+
+# Runtime logs and local code indexing
+*.log
+/logs/
+/.codegraph/
+
+# Local GitHub release publishing script (kept outside GitLab & GitHub remotes)
+/scripts/publish-github-release.sh
+
+# Editor and OS temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local-only notes. Do not publish demos, logs, or internal discussion.
+.demo/
+.logs/
+.internal/
+

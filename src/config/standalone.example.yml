@@ -1,0 +1,49 @@
+# Chay tool truc tiep tren server co IP nay. Standalone khong can SSH/sshd.
+cluster:
+  name: "mydb"
+  profile: "standalone"
+  version: "16"
+  package_source: "vnpt"
+  release_rpm_url: "http://dbengine-repo.ttpmhcm.com/vnpt-db-engine-release.rpm"
+  repo_url: "http://dbengine-repo.ttpmhcm.com/vnpt-db-engine/el$releasever/$basearch"
+  gpg_key_url: "http://dbengine-repo.ttpmhcm.com/RPM-GPG-KEYS/RPM-GPG-KEY-VNPT-DB-ENGINE"
+  safeguard: true
+  # package_bridge: false              # standalone khong co node remote nen cau nay khong mo proxy
+topology:
+  hosts:
+    - ip: "10.0.0.11"                     # thay bang IP interface cua server nay
+      name: "dbe-node-01"
+      local: true                        # standalone tu mac dinh true neu khong khai bao
+      roles: ["db", "etcd", "balancer"]
+settings:
+  auto_tune: true
+  workload: "oltp"
+  auth:
+    postgres_password: "CHANGE_ME"
+    replicator_password: "CHANGE_ME"
+    monitor_password: "CHANGE_ME"
+  etcd: {enabled: true}
+  patroni: {enabled: true, synchronous_mode: false}
+  pgbouncer: {enabled: true}
+  haproxy: {enabled: true}
+  pgbackrest: {enabled: true, stanza: "vde_cluster", destination: "local"}
+  # PMM Server + Client tren cung node; khong can server/container runtime co san.
+  pmm:
+    enabled: true
+    mode: "local"
+    version: 3
+    os_reserve_mb: 1024                  # tru PMM + OS truoc khi tune RAM cho DB
+    query_source: "pgstatements"
+    insecure_tls: true                  # self-signed cua PMM Server local
+    server_install:
+      runtime: "podman"                # tu cai Podman tu repo OS neu chua co
+      image: "docker.io/percona/pmm-server:3.10.0"
+      pull_policy: "missing"            # never: chi dung image da cache cho offline
+      pull_timeout: 2400                 # gioi han pull image, giay (1..7200)
+      container_name: "vde-pmm-server"
+      volume: "vde-pmm-data"            # giu metrics/dashboard khi chay lai
+      listen_address: "127.0.0.1"        # xem UI qua SSH tunnel
+      https_port: 8443
+      memory: "4g"
+      retention: "168h"
+      password_file: "/etc/vde/pmm-admin.password"  # tu sinh, root-only; khong commit secret
